@@ -1,0 +1,2 @@
+# Bert4Classification
+ 基于Pytorch框架实现Bert文本分类，并通过Attention实现可视化
