@@ -2,8 +2,6 @@ import os
 import time
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +9,7 @@ from torch.utils.data import TensorDataset, RandomSampler, DataLoader
 from transformers import BertModel, BertTokenizer
 from train_bert import convert_examples_to_features, MyPro
 
-from Models import Bert_BiLSTM_Attention, Bert_Attention
+from Models import Bert_BiLSTM_Attention, Bert_Attention, BertRNN_Att
 
 
 class Config:
@@ -26,7 +24,7 @@ class Config:
         self.max_seq_length = 32
         self.batch_size = 16
         self.do_lower_case = True
-        self.do_train = False
+        self.do_train = True
         self.do_eval = True
         self.do_test = True
         # Config of LSTM
@@ -35,7 +33,7 @@ class Config:
         self.dropout_prob = 0.1
         self.embedding_size = 768
         # Config of Training
-        self.epochs = 3
+        self.epochs = 5
         self.learning_rate = 1e-5
 
 
@@ -56,8 +54,10 @@ def Test(config, model, processors, tokenizer, labels, device):
     """加载数据"""
     all_input_ids = torch.tensor([f.input_ids for f in test_features], dtype=torch.long)
     all_input_mask = torch.tensor([f.input_mask for f in test_features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in test_features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in test_features], dtype=torch.long)
-    val_data = TensorDataset(all_input_ids, all_input_mask, all_label_ids)
+
+    val_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
     val_sampler = RandomSampler(val_data)  # 训练时需要shuffle数据 RandomSampler从迭代器里面随机取样本
     val_dataloader = DataLoader(val_data, sampler=val_sampler, batch_size=config.batch_size)
 
@@ -72,10 +72,10 @@ def Test(config, model, processors, tokenizer, labels, device):
         # Add batch to GPU
         batch = tuple(t.to(device) for t in batch)
         # Unpack the inputs from our dataloader
-        input_ids, input_mask, label_ids = batch
+        input_ids, input_mask, segment_ids, label_ids = batch
         # Telling the model not to compute or store gradients, saving memory and speeding up validation
         with torch.no_grad():
-            output = model.forward(inputs_id=input_ids, attention_mask=input_mask)  # 不传labels
+            output = model.forward(input_ids=input_ids, attention_mask=input_mask, token_type_ids=segment_ids)
             best_path = output[0]
             attention_weights = output[1]
         batch_size_tokens = []
@@ -107,8 +107,10 @@ def Eval(config, model, processors, tokenizer, labels, device, val_accuracy_set)
     """加载数据"""
     all_input_ids = torch.tensor([f.input_ids for f in val_features], dtype=torch.long)
     all_input_mask = torch.tensor([f.input_mask for f in val_features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in val_features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in val_features], dtype=torch.long)
-    val_data = TensorDataset(all_input_ids, all_input_mask, all_label_ids)
+
+    val_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
     val_sampler = RandomSampler(val_data)  # 训练时需要shuffle数据 RandomSampler从迭代器里面随机取样本
     val_dataloader = DataLoader(val_data, sampler=val_sampler, batch_size=config.batch_size)
 
@@ -120,10 +122,11 @@ def Eval(config, model, processors, tokenizer, labels, device, val_accuracy_set)
         # Add batch to GPU
         batch = tuple(t.to(device) for t in batch)
         # Unpack the inputs from our dataloader
-        input_ids, input_mask, label_ids = batch
+        input_ids, input_mask, segment_ids, label_ids = batch
         # Telling the model not to compute or store gradients, saving memory and speeding up validation
         with torch.no_grad():
-            output = model.forward(inputs_id=input_ids, attention_mask=input_mask)  # 不传labels
+            output = model.forward(input_ids=input_ids, token_type_ids=segment_ids,
+                                   attention_mask=input_mask)  # 不传labels
             best_path = output[0]
 
         best_path = best_path.detach().cpu().numpy().reshape(-1)
@@ -147,8 +150,10 @@ def Train(config, model, processors, tokenizer, labels, device, optimizer):
                                                   tokenizer=tokenizer)
     all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
     all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in train_features], dtype=torch.long)
-    train_data = TensorDataset(all_input_ids, all_input_mask, all_label_ids)
+
+    train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
     train_sampler = RandomSampler(train_data)  # 训练时需要shuffle数据 RandomSampler从迭代器里面随机取样本
     train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=config.batch_size)
 
@@ -172,11 +177,12 @@ def Train(config, model, processors, tokenizer, labels, device, optimizer):
             # 将数据加载到GPU上进行加速
             batch = tuple(t.to(device) for t in batch)
             # Unpack the inputs from our dataloader
-            input_ids, input_mask, label_ids = batch
+            input_ids, input_mask, segment_ids, label_ids = batch
             #  清除上一遍计算出的梯度
             optimizer.zero_grad()
             #  正向传递（通过网络输入数据）
-            loss = model.forward(inputs_id=input_ids, attention_mask=input_mask, labels=label_ids)
+            loss = model.forward(input_ids=input_ids, attention_mask=input_mask, token_type_ids=segment_ids,
+                                 labels=label_ids)
             loss = loss[0]
             # 向后传递（反向传播）
             loss.backward()
@@ -258,7 +264,7 @@ def main():
     config = Config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = Bert_Attention(config)
+    model = BertRNN_Att.from_pretrained(config.bert_model, config=config.bert_model_config, model_configs=config)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
