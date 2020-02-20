@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from transformers import BertModel, BertPreTrainedModel
 
 
-class Bert_BiLSTM_Attention(nn.Module):
+class Bert_BiLSTM_Attention(BertPreTrainedModel):
     def __init__(self, config):
-        super(Bert_BiLSTM_Attention).__init__()
+        super(Bert_BiLSTM_Attention, self).__init__(config.bert_model_config)
         self.num_labels = config.num_labels
         self.hidden_dim = config.hidden_dims
         self.dropout = config.dropout_prob
@@ -61,9 +61,7 @@ class Bert_BiLSTM_Attention(nn.Module):
         M = torch.tanh(self.line(H))
         a = torch.matmul(M, self.w)
         a = F.softmax(a, dim=1).unsqueeze(-1)
-        self.att_out = a.data
         out = H * a
-        # out = torch.tanh(out)
         return out, a
 
 

@@ -22,9 +22,9 @@ class Config:
         # Config of Processor
         self.num_labels = 2
         self.max_seq_length = 32
-        self.batch_size = 16
+        self.batch_size = 8
         self.do_lower_case = True
-        self.do_train = True
+        self.do_train = False
         self.do_eval = True
         self.do_test = True
         # Config of LSTM
@@ -244,18 +244,20 @@ def mk_html(config, tokens, attns):
     html = ""
 
     for i in range(config.batch_size):
-        attn_max = 0
-        attn_min = 1
-        for word, attn in zip(tokens[i], attns[i]):
-            if word != '[CLS]' and word != '[SEP]':
-                if attn > attn_max:
-                    attn_max = attn
-                if attn < attn_min:
-                    attn_min = attn
-        c = attn_max - attn_min
+        # attn_max = 0
+        # attn_min = 1
+        # for word, attn in zip(tokens[i], attns[i]):
+        #     if word != '[CLS]' and word != '[SEP]':
+        #         if attn > attn_max:
+        #             attn_max = attn
+        #         if attn < attn_min:
+        #             attn_min = attn
+        # c = attn_max - attn_min
+        attn_min = 0
+        c = 1
         for word, attn in zip(tokens[i], attns[i]):
             if word != '[PAD]' and word != '[CLS]' and word != '[SEP]':
-                html += highlight(word, (attn - attn_min) / c)
+                html += highlight(word, pow((attn - attn_min) / c, 1/2))
         html += "<br>\n"
     return html + "<br><br>\n"
 
